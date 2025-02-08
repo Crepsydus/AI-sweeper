@@ -113,37 +113,27 @@ def get_most_known():
     return knowledge_list
 
 def get_slice(coords, hide_flags = False):
-    nums = []
-    kms = []
-    unkws = []
-    for adj_crds in get_adjacent(coords):
-        local_km = 0
-        local_unkw = 0
-        if adj_crds == "OoB":
-            nums.append(11)
-            kms.append(11)
-            unkws.append(11)
-        else:
-            if adj_crds in opened:
-                for i in get_adjacent(adj_crds):
-                    if i in flags:
-                        local_km += 1
-                    if i not in opened and i != "OoB":
-                        local_unkw += 1
-                if adj_crds not in flags:
-                    nums.append(int(map[adj_crds]))
-                    kms.append(local_km)
-                    unkws.append(local_unkw)
-                else:
-                    nums.append(9 if not hide_flags else 10)
-                    kms.append(9 if not hide_flags else 10)
-                    unkws.append(9 if not hide_flags else 10)
+    result = np.zeros((7,7))
+    for y in range(-3,4):
+        for x in range(-3,4):
+            ty = coords[0]+y
+            tx = coords[1]+x
+            tile = (ty,tx)
+            if (ty > map_width-1 or ty < 0) or (tx > map_width-1 or tx < 0):
+                result[y+3,x+3] = 11
             else:
-                nums.append(10)
-                kms.append(10)
-                unkws.append(10)
-    return nums + kms + unkws
-
+                if tile in opened:
+                    if tile in flags:
+                        if hide_flags:
+                            result[y+3,x+3] = 10
+                        else:
+                            result[y+3,x+3] = 9
+                    else:
+                        result[y+3,x+3] = map[tile]
+                else:
+                    result[y+3,x+3] = 10
+    result[3,3] = 99
+    return result
 def count_open_corner(coords):
     adj_list = get_adjacent(coords)
     corner_indices = [[0,1,3], [1,2,4], [3,5,6], [4,6,7]]
@@ -165,7 +155,7 @@ map = np.zeros((map_width,map_width))
 
 
 
-def simulate_data(data_amount, pass_freq):
+def simulate_data(data_amount, pass_freq, majority = 0.5):
     print("Generating data...")
     global map
     global opened
@@ -262,16 +252,16 @@ def simulate_data(data_amount, pass_freq):
                     opened.append(pick)
 
             if (np.random.random() < pass_freq or (map[pick] == 9 and np.random.random() < pass_freq*1.3)
-                    or (first_count >= 0.5 * data_amount and map[pick] == 9 and np.random.random() < pass_freq*2)):
+                    or (first_count >= majority * data_amount and map[pick] == 9 and np.random.random() < pass_freq*2)):
                 if amount < data_amount:
                     if best_option == 1:
-                        if first_count <= 0.5 * data_amount:
+                        if first_count <= majority * data_amount:
                             yield (slice, best_option)
                             first_count += 1
                             amount += 1
                             _already_printed = False
                     else:
-                        if second_count <= 0.5 * data_amount:
+                        if second_count <= (1-majority) * data_amount:
                             yield (slice, best_option)
                             second_count += 1
                             amount += 1

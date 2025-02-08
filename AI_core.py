@@ -2,7 +2,8 @@ import numpy as np
 import colorama as cr
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Input, Dropout, BatchNormalization
+from tensorflow.keras.layers import Dense, Input, Dropout, BatchNormalization, Conv2D, Flatten
+
 from simulator import simulate_data, generate_map
 
 def print_map(map, opened:list):
@@ -90,86 +91,36 @@ def get_most_known():
     return knowledge_list
 
 def get_slice(coords, hide_flags = False):
-    nums = []
-    kms = []
-    unkws = []
-    for adj_crds in get_adjacent(coords):
-        local_km = 0
-        local_unkw = 0
-        if adj_crds == "OoB":
-            nums.append(11)
-            kms.append(11)
-            unkws.append(11)
-        else:
-            if adj_crds in opened:
-                for i in get_adjacent(adj_crds):
-                    if i in flags and not hide_flags:
-                        local_km += 1
-                    if (i not in opened and i != "OoB") or (i in flags and hide_flags):
-                        local_unkw += 1
-                if adj_crds not in flags:
-                    nums.append(int(map[adj_crds]))
-                    kms.append(local_km)
-                    unkws.append(local_unkw)
-                else:
-                    nums.append(9 if not hide_flags else 10)
-                    kms.append(9 if not hide_flags else 10)
-                    unkws.append(9 if not hide_flags else 10)
+    result = np.zeros((7,7))
+    for y in range(-3,4):
+        for x in range(-3,4):
+            ty = coords[0]+y
+            tx = coords[1]+x
+            tile = (ty,tx)
+            if (ty > map_width-1 or ty < 0) or (tx > map_width-1 or tx < 0):
+                result[y+3,x+3] = 11
             else:
-                nums.append(10)
-                kms.append(10)
-                unkws.append(10)
-    return nums + kms + unkws
+                if tile in opened:
+                    if tile in flags:
+                        if hide_flags:
+                            result[y+3,x+3] = 10
+                        else:
+                            result[y+3,x+3] = 9
+                    else:
+                        result[y+3,x+3] = map[tile]
+                else:
+                    result[y+3,x+3] = 10
+    result[3,3] = 99
+    return result
 def all_iso_variants(array):
-    nums_9 = array[0][0:8]
-    nums_9.insert(4,99)
-    nums_9 = np.array(nums_9).reshape(3,3)
-
-    kms_9 = array[0][8:16]
-    kms_9.insert(4,99)
-    kms_9 = np.array(kms_9).reshape(3,3)
-
-    unkws_9 = array[0][16:24]
-    unkws_9.insert(4,99)
-    unkws_9 = np.array(unkws_9).reshape(3,3)
-
-    nums_1 = np.rot90(nums_9)
-    kms_1 = np.rot90(kms_9)
-    unkws_1 = np.rot90(unkws_9)
-
-    nums_2 = np.rot90(nums_9,2)
-    kms_2 = np.rot90(kms_9, 2)
-    unkws_2 = np.rot90(unkws_9, 2)
-
-    nums_3 = np.rot90(nums_9,3)
-    kms_3 = np.rot90(kms_9,3)
-    unkws_3 = np.rot90(unkws_9,3)
-
-    nums_9f = np.fliplr(nums_9)
-    kms_9f = np.fliplr(kms_9)
-    unkws_9f = np.fliplr(unkws_9)
-    nums_1f = np.fliplr(nums_1)
-    kms_1f = np.fliplr(kms_1)
-    unkws_1f = np.fliplr(unkws_1)
-    nums_2f = np.fliplr(nums_2)
-    kms_2f = np.fliplr(kms_2)
-    unkws_2f = np.fliplr(unkws_2)
-    nums_3f = np.fliplr(nums_3)
-    kms_3f = np.fliplr(kms_3)
-    unkws_3f = np.fliplr(unkws_3)
-
-    count = 0
-    result = []
-    for i in [nums_9,kms_9,unkws_9,nums_1,kms_1,unkws_1,nums_2,kms_2,unkws_2,nums_3,kms_3,unkws_3,nums_9f,kms_9f,unkws_9f,
-              nums_1f,kms_1f,unkws_1f,nums_2f,kms_2f,unkws_2f,nums_3f,kms_3f,unkws_3f]:
-        count += 1
-        ii = i.flatten().tolist()
-        ii.pop(4)
-        result = result + ii
-        if count == 3:
-            count = 0
-            yield (result, array[1])
-            result = []
+    layout = array[0]
+    option = array[1]
+    for var in [layout, np.rot90(layout, 1), np.rot90(layout, 2), np.rot90(layout, 3)]:
+        for i in [False,True]:
+            if i:
+                yield (np.fliplr(var),option)
+            else:
+                yield (var,option)
 def not_flags():
     return sum([1 if i not in flags else 0 for i in opened])
 
@@ -187,7 +138,11 @@ def count_open_corner(coords):
     return corner_count
 #%%
 model = Sequential([
-    Input(shape=(24,)),
+    Input(shape=(7,7,1)),
+    Conv2D(32, (3, 3), activation='relu',),
+    Conv2D(64, (3, 3), activation='relu',),
+    Flatten(),
+
     Dense(128, activation='relu'),  # Входной слой с 128 нейронами
     BatchNormalization(),                              # Нормализация для ускорения сходимости
     Dropout(0.3),                                      # Dropout для предотвращения переобучения
@@ -203,7 +158,7 @@ model = Sequential([
     Dense(64, activation='relu'),                      # Ещё один скрытый слой
     Dense(2, activation='softmax')                     # Выходной слой для 3 классов
 ])
-#     |||    4.4    |||
+#     |||    5.0    |||
 
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
               loss='categorical_crossentropy',
@@ -217,19 +172,18 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 # 4.2 - Double-check before clicking in 50-50 situations   - FIRST SOLVE, but rare
 # 4.3 - fixed random bug that ruined a lot (picking not the best known tile)  - more solves
 # 4.4 - corner priority - more solves
+# 5.0 - 7x7 vision data format.
+
+# 0.9620 confirmed
 #%%
-DataRaw = [i for i in simulate_data(500000,1)]
+DataRaw = [i for i in simulate_data(500000,1,0.75)]
 DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
 X = np.array([i[0] for i in DataAuged])
 y = [i[1]-1 for i in DataAuged]
 
 y_one_hot = tf.keras.utils.to_categorical(y, num_classes=2)
 
-model.fit(X, y_one_hot, epochs=10, batch_size=20, validation_split=0.25)
-
-#%%
-# DataRaw = [i for i in simulate_data(1,0.1)]
-# print([i for i in all_iso_variants(DataRaw[0])])
+model.fit(X, y_one_hot, epochs=10, batch_size=40, validation_split=0.2)
 #%%
 #inputs
 map_width = 10
@@ -299,7 +253,7 @@ while too_fast:
                     dead_end = True
                     break
                 else:
-                    pick = tuple([int(i) for i in knowledges[knowledges[:, 1].argsort()][-1-ladder_count, 0].split(",")])
+                    pick = tuple([int(i) for i in knowledges[np.array([float(i) for i in knowledges[:, 1]]).argsort()[-1], 0].split(",")])
         else:
             pick = list(all_available())[np.random.randint(0,len(all_available()))]
             while pick in temporal_uncertainty:

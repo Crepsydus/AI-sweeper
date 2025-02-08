@@ -67,16 +67,16 @@ def get_most_known():
     for coords in all_available():
         knowledge = 0
         for adj in get_adjacent(coords):
-            # if adj == "OoB":
-            #     knowledge += 1
+            if adj == "OoB":
+                knowledge += 1
             if adj in opened:
                 if adj not in flags:
-                    knowledge += 2
-                    if map[adj] == 1:
-                        knowledge += 1
+                    knowledge += 3
+                    if map[adj] in [1,2]:
+                        knowledge += 4-map[adj]
                 else:
-                    knowledge += 1
-        knowledge += 3 * count_open_corner(coords)
+                    knowledge += 2
+        knowledge += 4 * count_open_corner(coords)
         for tile in get_adjacent(coords):
             if tile in opened and tile not in flags:
                 local_km = 0
@@ -84,7 +84,7 @@ def get_most_known():
                     if i in flags:
                         local_km += 1
                 if local_km == map[tile]:
-                    knowledge += 2
+                    knowledge += 6
         knowledge_list = np.concatenate((knowledge_list, np.array([[f"{coords[0]},{coords[1]}", str(knowledge)]])), axis=0)
     # return tuple([int(j) for j in knowledge_list[knowledge_list[:,1].tolist().index(str(max([int(i) for i in knowledge_list[:,1]]))), 0].split(",")])
     return knowledge_list
@@ -218,14 +218,14 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 # 4.3 - fixed random bug that ruined a lot (picking not the best known tile)  - more solves
 # 4.4 - corner priority - more solves
 #%%
-DataRaw = [i for i in simulate_data(500000,0.33)]
+DataRaw = [i for i in simulate_data(500000,1)]
 DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
 X = np.array([i[0] for i in DataAuged])
 y = [i[1]-1 for i in DataAuged]
 
 y_one_hot = tf.keras.utils.to_categorical(y, num_classes=2)
 
-model.fit(X, y_one_hot, epochs=10, batch_size=50, validation_split=0.2)
+model.fit(X, y_one_hot, epochs=10, batch_size=20, validation_split=0.25)
 
 #%%
 # DataRaw = [i for i in simulate_data(1,0.1)]
@@ -287,7 +287,7 @@ while too_fast:
 
         if not_flags() > 3:
             knowledges = get_most_known()
-            pick = tuple([int(i) for i in knowledges[np.array([int(i) for i in knowledges[:, 1]]).argsort()[-1], 0].split(",")])
+            pick = tuple([int(i) for i in knowledges[np.array([float(i) for i in knowledges[:, 1]]).argsort()[-1], 0].split(",")])
             # print(knowledges)
             # print([int(i) for i in knowledges[:, 1]])
             # print(np.array([int(i) for i in knowledges[:, 1]]).argsort())

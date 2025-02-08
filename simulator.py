@@ -90,13 +90,24 @@ def get_most_known():
     for coords in all_available():
         knowledge = 0
         for adj in get_adjacent(coords):
-            # if adj == "OoB":
-            #     knowledge += 1
+            if adj == "OoB":
+                knowledge += 1
             if adj in opened:
                 if adj not in flags:
-                    knowledge += 2
+                    knowledge += 3
+                    if map[adj] in [1,2]:
+                        knowledge += 4-map[adj]
                 else:
-                    knowledge += 1
+                    knowledge += 2
+        knowledge += 4 * count_open_corner(coords)
+        for tile in get_adjacent(coords):
+            if tile in opened and tile not in flags:
+                local_km = 0
+                for i in get_adjacent(tile):
+                    if i in flags:
+                        local_km += 1
+                if local_km == map[tile]:
+                    knowledge += 6
         knowledge_list = np.concatenate((knowledge_list, np.array([[f"{coords[0]},{coords[1]}", str(knowledge)]])), axis=0)
     # return tuple([int(j) for j in knowledge_list[knowledge_list[:,1].tolist().index(str(max([int(i) for i in knowledge_list[:,1]]))), 0].split(",")])
     return knowledge_list
@@ -133,6 +144,18 @@ def get_slice(coords, hide_flags = False):
                 unkws.append(10)
     return nums + kms + unkws
 
+def count_open_corner(coords):
+    adj_list = get_adjacent(coords)
+    corner_indices = [[0,1,3], [1,2,4], [3,5,6], [4,6,7]]
+    corner_count = 0
+    for i in corner_indices:
+        corner_similarity = 0
+        for j in i:
+            if adj_list[j] in opened:
+                corner_similarity += 1
+        if corner_similarity == 3:
+            corner_count += 1
+    return corner_count
 
 opened = []
 knowledge = []
@@ -214,7 +237,7 @@ def simulate_data(data_amount, pass_freq):
             iteration += 1
             if len(opened) > 3:
                 knowledges = get_most_known()
-                pick = tuple([int(i) for i in knowledges[np.array([int(i) for i in knowledges[:, 1]]).argsort()[-1], 0].split(",")])
+                pick = tuple([int(i) for i in knowledges[np.array([float(i) for i in knowledges[:, 1]]).argsort()[-1], 0].split(",")])
             else:
                 pick = list(all_available())[np.random.randint(0,len(all_available()))]
             slice = get_slice(pick)

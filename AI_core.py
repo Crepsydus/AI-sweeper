@@ -174,9 +174,9 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 # 4.4 - corner priority - more solves
 # 5.0 - 7x7 vision data format.
 
-# 0.9620 confirmed
+# 0.9629 confirmed
 #%%
-DataRaw = [i for i in simulate_data(500000,1,0.75)]
+DataRaw = [i for i in simulate_data(100000,1,0.66)]
 DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
 X = np.array([i[0] for i in DataAuged])
 y = [i[1]-1 for i in DataAuged]

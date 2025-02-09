@@ -139,28 +139,26 @@ def count_open_corner(coords):
 #%%
 model = Sequential([
     Input(shape=(7,7,1)),
-    Conv2D(32, (3, 3), activation='relu',),
     Conv2D(64, (3, 3), activation='relu',),
+    Dropout(0.3),
+
+    Conv2D(128, (3, 3), activation='relu',),
     Flatten(),
 
-    Dense(128, activation='relu'),  # Входной слой с 128 нейронами
+    Dense(256, activation='relu'),  # Входной слой с 128 нейронами
     BatchNormalization(),                              # Нормализация для ускорения сходимости
-    Dropout(0.3),                                      # Dropout для предотвращения переобучения
-
-    Dense(256, activation='relu'),                     # Скрытый слой с 256 нейронами
-    BatchNormalization(),
-    Dropout(0.3),
+    Dropout(0.4),                                      # Dropout для предотвращения переобучения
 
     Dense(128, activation='relu'),                     # Ещё один скрытый слой
     BatchNormalization(),
-    Dropout(0.2),
+    Dropout(0.3),
 
     Dense(64, activation='relu'),                      # Ещё один скрытый слой
     Dense(2, activation='softmax')                     # Выходной слой для 3 классов
 ])
-#     |||    5.0    |||
+#     |||    5.1    |||
 
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.001, momentum=0.9),
               loss='categorical_crossentropy',
               metrics=['accuracy'])
 # 1.0 - Original
@@ -173,17 +171,18 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 # 4.3 - fixed random bug that ruined a lot (picking not the best known tile)  - more solves
 # 4.4 - corner priority - more solves
 # 5.0 - 7x7 vision data format.
+# 5.1 - slightly different model
 
-# 0.9629 confirmed
+# 0.962 confirmed
 #%%
-DataRaw = [i for i in simulate_data(100000,1,0.66)]
+DataRaw = [i for i in simulate_data(100000,1)]
 DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
 X = np.array([i[0] for i in DataAuged])
 y = [i[1]-1 for i in DataAuged]
 
 y_one_hot = tf.keras.utils.to_categorical(y, num_classes=2)
 
-model.fit(X, y_one_hot, epochs=10, batch_size=40, validation_split=0.2)
+model.fit(X, y_one_hot, epochs=10, batch_size=50, validation_split=0.2)
 #%%
 #inputs
 map_width = 10
@@ -250,8 +249,9 @@ while too_fast:
                 ladder_count += 1
                 if ladder_count > len(knowledges):
                     print("i think this is a dead end")
-                    dead_end = True
-                    break
+                    # dead_end = True
+                    # break
+                    temporal_uncertainty = []
                 else:
                     pick = tuple([int(i) for i in knowledges[np.array([float(i) for i in knowledges[:, 1]]).argsort()[-1], 0].split(",")])
         else:

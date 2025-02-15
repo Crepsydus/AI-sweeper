@@ -1,4 +1,3 @@
-import numpy as np
-a = np.array([[2,1],
-             [1,2]])
-print(a[:,1].argsort())
+import tensorflow as tf
+
+print("Доступные устройства:", tf.config.list_physical_devices('GPU'))

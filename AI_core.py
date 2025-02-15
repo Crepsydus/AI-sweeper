@@ -142,36 +142,42 @@ def count_known_mines(coords):
             local_mines += 1
     return local_mines
 
-def count_unknowns(coords):
+def count_unknowns(coords, guessed = False):
     local_unkws = 0
     for i in get_adjacent(coords):
-        if i not in opened:
+        if i not in opened and i != "OoB" and (not guessed or i not in stated_safe):
             local_unkws += 1
     return local_unkws
 #%%
 model = Sequential([
     Input(shape=(7,7,1)),
     Conv2D(64, (3, 3), activation='relu',),
-    Dropout(0.3),
+    Dropout(0.2),
 
-    Conv2D(128, (3, 3), activation='relu',),
+    Conv2D(256, (3, 3), activation='relu',),
     Flatten(),
+
+    Dense(1024, activation='relu'),
+    BatchNormalization(),
+    Dropout(0.5),
+
+    Dense(512, activation='relu'),
+    BatchNormalization(),
+    Dropout(0.35),
 
     Dense(256, activation='relu'),
     BatchNormalization(),
-    Dropout(0.4),
+    Dropout(0.3),
 
     Dense(128, activation='relu'),
     BatchNormalization(),
-    Dropout(0.3),
-
-    Dense(64, activation='relu'),
+    Dropout(0.25),
 
     Dense(2, activation='softmax')
 ])
-#     |||    6.0    |||
-
-model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.001, momentum=0.9),
+#     |||    7.0    |||
+tf.keras.mixed_precision.set_global_policy('mixed_float16')
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
               loss='categorical_crossentropy',
               metrics=['accuracy'])
 # 1.0 - Original
@@ -185,23 +191,27 @@ model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.001, momentum=0.
 # 4.4 - corner priority - more solves
 # 5.0 - 7x7 vision data format.
 # 5.1 - slightly different model
-# 6.0 - auto-brain. Only stuck in 50/50 situation (LITERALLY).
+# 6.0 - auto-brain.
+# 6.1 - extended model.
+# 7.0 - underflow prevention. Final version. Lose pretty much only in 50/50 situations (have at least 1 map layout,
+# when selected tile is a mine, and at least 1, when selected tile is safe)
+# End.
 #%%
-model = load_model("main_model.keras")
+model = load_model("ext_model.keras")
 #%%
-DataRaw = [i for i in simulate_data(10000,1)]
+DataRaw = [i for i in simulate_data(100000,1)]
 DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
 X = np.array([i[0] for i in DataAuged])
 y = [i[1]-1 for i in DataAuged]
 
 y_one_hot = tf.keras.utils.to_categorical(y, num_classes=2)
 
-model.fit(X, y_one_hot, epochs=10, batch_size=50, validation_split=0.2)
+model.fit(X, y_one_hot, epochs=10, batch_size=128, validation_split=0.2)
 #%%
-model.save("main_model.keras")
+model.save("ext_model.keras")
 #%%
 #inputs
-map_width = 10
+map_width = 50
 mine_freq = 0.17
 too_fast = True
 while too_fast:
@@ -215,6 +225,9 @@ while too_fast:
     flags_chances = []
     temporal_uncertainty = []
     iteration = 0
+    prev_pick = ()
+    pick = ()
+    decision = 0
     map = generate_map(map_width,mine_freq)
     mines_amount = sum([1 if i == 9 else 0 for i in map.flatten().tolist()])
     print_map(map, opened)
@@ -239,32 +252,66 @@ while too_fast:
         if len(opened) > 8:
             too_fast = False
 
-        for only_flag in set([i for j in all_available() for i in get_adjacent(j) if i in opened and count_unknowns(i) == map[i]-count_known_mines(i)]):
-            for tile in get_adjacent(only_flag):
-                if tile not in opened and tile != "OoB":
-                    print("< (AUTO) Flag >")
-                    # print(tile)
-                    # print("FROM")
-                    # print(only_flag)
-                    flags.append(tile)
-                    opened.append(tile)
+
+        stated_safe = []
+        for i in range(8):
+            for only_flag in set([i for j in all_available() for i in get_adjacent(j) if i in opened and count_unknowns(i) == map[i]-count_known_mines(i)]):
+                for tile in get_adjacent(only_flag):
+                    if tile not in opened and tile != "OoB":
+                        print(f"auto-flag {tile}")
+                        # print(tile)
+                        # print("FROM")
+                        # print(only_flag)
+                        flags.append(tile)
+                        opened.append(tile)
+
+            for clear in set([i for j in all_available() for i in get_adjacent(j) if i in opened and count_known_mines(i) == map[i]]):
+                for tile in get_adjacent(clear):
+                    if tile not in opened and tile != "OoB":
+                        if tile not in stated_safe:
+                            stated_safe.append(tile)
+                            print(f"auto-semiclear {tile}")
+
+            #check for underflow
+            if decision == 2:
+                prev_pick = pick
+            for tile in stated_safe:
+                for risk in get_adjacent(tile):
+                    if risk != "OoB" and risk in opened and risk not in flags:
+                        if count_unknowns(risk, True) < map[risk] - count_known_mines(risk):
+                            print(f"Local underflow {risk}")
+                            if prev_pick != ():
+                                opened.remove(prev_pick)
+                                flags.remove(prev_pick)
+                                print("Prev. flag prooved WRONG. Revert")
+                                if map[prev_pick] == 9:
+                                    print(cr.Fore.RED + "<< LOSS >> (?)" + cr.Fore.RESET)
+                                    already_lost = True
+                                else:
+                                    print("Successful click (Reverted flag)")
+                                    recursive_open(prev_pick)
+                                    empty_recursive_cache()
+                                stated_safe = []
 
         for clear in set([i for j in all_available() for i in get_adjacent(j) if i in opened and count_known_mines(i) == map[i]]):
             for tile in get_adjacent(clear):
                 if tile not in opened and tile != "OoB":
-                    # print(tile)
-                    # print("FROM")
-                    # print(clear)
-                    print("auto-clear")
+                    print(f"auto-clear {tile}")
                     if map[tile] == 9:
                         print(cr.Fore.RED + "<< LOSS >>" + cr.Fore.RESET)
                         already_lost = True
                     else:
-                        print("Successful click (AUTO-CLEAR)")
+                        print("Successful click")
                         recursive_open(tile)
                         empty_recursive_cache()
+        print("-"*map_width*3)
+        print_map(map, opened)
+
+
+
         if len(opened) >= map_width**2 or already_lost:
             break
+
 
         if not_flags() > 3:
             knowledges = get_most_known()
@@ -353,3 +400,7 @@ while too_fast:
                         opened.remove(low)
                         temporal_uncertainty.append(low)
 
+if len(opened) >= map_width**2 and not already_lost:
+    print(cr.Fore.GREEN + "<< SUCCESS >>")
+elif already_lost:
+    print(cr.Fore.RED + "<< LOSS >>" + cr.Fore.RESET)

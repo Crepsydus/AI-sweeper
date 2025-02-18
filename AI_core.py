@@ -197,21 +197,22 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 # when selected tile is a mine, and at least 1, when selected tile is safe)
 # End.
 #%%
+# model = load_model("ext_model.keras")
+
+# DataRaw = [i for i in simulate_data(1000,1)]
+# DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
+# X = np.array([i[0] for i in DataAuged])
+# y = [i[1]-1 for i in DataAuged]
+#
+# y_one_hot = tf.keras.utils.to_categorical(y, num_classes=2)
+#
+# model.fit(X, y_one_hot, epochs=10, batch_size=128, validation_split=0.2)
+
+# model.save("ext_model.keras")
+#%%
 model = load_model("ext_model.keras")
-#%%
-DataRaw = [i for i in simulate_data(100000,1)]
-DataAuged = [j for i in DataRaw for j in all_iso_variants(i)]
-X = np.array([i[0] for i in DataAuged])
-y = [i[1]-1 for i in DataAuged]
 
-y_one_hot = tf.keras.utils.to_categorical(y, num_classes=2)
-
-model.fit(X, y_one_hot, epochs=10, batch_size=128, validation_split=0.2)
-#%%
-model.save("ext_model.keras")
-#%%
-#inputs
-map_width = 50
+map_width = 15
 mine_freq = 0.17
 too_fast = True
 while too_fast:
@@ -270,7 +271,7 @@ while too_fast:
                     if tile not in opened and tile != "OoB":
                         if tile not in stated_safe:
                             stated_safe.append(tile)
-                            print(f"auto-semiclear {tile}")
+                            print(f"consider safe {tile}")
 
             #check for underflow
             if decision == 2:

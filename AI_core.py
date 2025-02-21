@@ -175,7 +175,7 @@ model = Sequential([
 
     Dense(2, activation='softmax')
 ])
-#     |||    7.0    |||
+#     |||    7.1    |||
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
               loss='categorical_crossentropy',
@@ -195,7 +195,8 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 # 6.1 - extended model.
 # 7.0 - underflow prevention. Final version. Lose pretty much only in 50/50 situations (have at least 1 map layout,
 # when selected tile is a mine, and at least 1, when selected tile is safe)
-# End.
+# End?
+# 7.1 - little extra tweaks. Past-end
 #%%
 # model = load_model("ext_model.keras")
 
@@ -212,7 +213,7 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 #%%
 model = load_model("ext_model.keras")
 
-map_width = 15
+map_width = 20
 mine_freq = 0.17
 too_fast = True
 while too_fast:
@@ -256,7 +257,8 @@ while too_fast:
 
         stated_safe = []
         for i in range(8):
-            for only_flag in set([i for j in all_available() for i in get_adjacent(j) if i in opened and count_unknowns(i) == map[i]-count_known_mines(i)]):
+            for only_flag in set([i for j in all_available() for i in get_adjacent(j) if i in opened and i not in flags\
+                                                                and count_unknowns(i) == map[i]-count_known_mines(i)]):
                 for tile in get_adjacent(only_flag):
                     if tile not in opened and tile != "OoB":
                         print(f"auto-flag {tile}")
@@ -266,6 +268,18 @@ while too_fast:
                         flags.append(tile)
                         opened.append(tile)
 
+            #check for overflow
+            if decision == 2:
+                prev_pick = pick
+
+            for o in [i for i in opened if i not in flags]:
+                if map[o] < count_known_mines(o):
+                    print(f"overflow {o}")
+                    print(f"removed flag {prev_pick} and consider safe")
+                    flags.remove(prev_pick)
+                    opened.remove(prev_pick)
+                    stated_safe.append(prev_pick)
+
             for clear in set([i for j in all_available() for i in get_adjacent(j) if i in opened and count_known_mines(i) == map[i]]):
                 for tile in get_adjacent(clear):
                     if tile not in opened and tile != "OoB":
@@ -274,8 +288,6 @@ while too_fast:
                             print(f"consider safe {tile}")
 
             #check for underflow
-            if decision == 2:
-                prev_pick = pick
             for tile in stated_safe:
                 for risk in get_adjacent(tile):
                     if risk != "OoB" and risk in opened and risk not in flags:
@@ -308,11 +320,8 @@ while too_fast:
         print("-"*map_width*3)
         print_map(map, opened)
 
-
-
         if len(opened) >= map_width**2 or already_lost:
             break
-
 
         if not_flags() > 3:
             knowledges = get_most_known()
@@ -321,85 +330,26 @@ while too_fast:
             # print([int(i) for i in knowledges[:, 1]])
             # print(np.array([int(i) for i in knowledges[:, 1]]).argsort())
             ladder_count = 0
-            while pick in temporal_uncertainty:
-                ladder_count += 1
-                if ladder_count > len(knowledges):
-                    print("i think this is a dead end")
-                    if disable_recheck:
-                        dead_end = True
-                    disable_recheck = True
-                    temporal_uncertainty = []
-                else:
-                    pick = tuple([int(i) for i in knowledges[np.array([float(i) for i in knowledges[:, 1]]).argsort()[-1-ladder_count], 0].split(",")])
         else:
             pick = list(all_available())[np.random.randint(0,len(all_available()))]
-            while pick in temporal_uncertainty:
-                pick = list(all_available())[np.random.randint(0,len(all_available()))]
-        if dead_end:
-            pick = (np.random.randint(0,map_width-1),np.random.randint(0,map_width-1))
-            while pick in temporal_uncertainty or pick in opened:
-                pick = (np.random.randint(0,map_width-1),np.random.randint(0,map_width-1))
         print(pick)
         predictions = model.predict(np.array([get_slice(pick)]))
         print(predictions)
         predicted_classes = np.argmax(predictions, axis=1) + 1
         decision = predicted_classes[0]
-        print(decision)
 
         if decision == 1 or not_flags() < 4:
-            if pick not in temporal_uncertainty:
-                if map[pick] == 9:
-                    print(cr.Fore.RED + "<< LOSS >>" + cr.Fore.RESET)
-                    already_lost = True
-                else:
-                    print("Successful click")
-                    recursive_open(pick)
-                    empty_recursive_cache()
-                    local_mines = []
-                    for i in get_adjacent(pick):
-                        if i in flags:
-                            local_mines.append(i)
-                    if len(local_mines) > map[pick] and not disable_recheck:
-                        print("Local overflow!")
-                        for i in range(len(local_mines) - int(map[pick])):
-                            mine_chances = []
-                            for m in local_mines:
-                                print(m)
-                                predictions = model.predict(np.array([get_slice(m, True)]))
-                                print(predictions)
-                                predicted_classes = np.argmax(predictions, axis=1) + 1
-                                mine_chances.append(predictions[0][1])
-                            low = local_mines[mine_chances.index(min(mine_chances))]
-                            print("Removed:")
-                            print(low)
-                            flags.remove(low)
-                            opened.remove(low)
-                            temporal_uncertainty.append(low)
-        elif decision == 2 and pick not in temporal_uncertainty:
+            if map[pick] == 9:
+                print(cr.Fore.RED + "<< LOSS >>" + cr.Fore.RESET)
+                already_lost = True
+            else:
+                print("Successful click")
+                recursive_open(pick)
+                empty_recursive_cache()
+        elif decision == 2:
             print("< Flag >")
             flags.append(pick)
             opened.append(pick)
-            for tile in [i for i in get_adjacent(pick) if i not in flags and i in opened]:
-                local_mines = []
-                for i in get_adjacent(tile):
-                    if i in flags:
-                        local_mines.append(i)
-                if len(local_mines) > map[tile] and not disable_recheck:
-                    print("Local overflow!")
-                    for i in range(len(local_mines) - int(map[tile])):
-                        mine_chances = []
-                        for m in local_mines:
-                            print(m)
-                            predictions = model.predict(np.array([get_slice(m, True)]))
-                            print(predictions)
-                            predicted_classes = np.argmax(predictions, axis=1) + 1
-                            mine_chances.append(predictions[0][1])
-                        low = local_mines[mine_chances.index(min(mine_chances))]
-                        print("Removed:")
-                        print(low)
-                        flags.remove(low)
-                        opened.remove(low)
-                        temporal_uncertainty.append(low)
 
 if len(opened) >= map_width**2 and not already_lost:
     print(cr.Fore.GREEN + "<< SUCCESS >>")
